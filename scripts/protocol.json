@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "name": "IMDb-Face",
+    "image_root": "all_faces",
+    "source_key": "full relative source path under all_faces, typically identity/filename.png; nested directories are preserved",
+    "identity_label": "immediate parent directory name, including for nested source paths",
+    "original_image_key": "the same full relative path under IMDB_clean_face, with .jpg replacing the crop's .png suffix",
+    "manifest_paths_relative_to": "dataset_release",
+    "manifest_entries_relative_to": "all_faces",
+    "all_manifest": "meta_info/all.txt.gz",
+    "all_image_count": 794629
+  },
+  "quality_partition": {
+    "score_manifest": "meta_info/quality_scores.csv.gz",
+    "metrics": ["crfiqa", "musiq"],
+    "quantile_population": "all 794629 accepted face crops, before train/test exclusion",
+    "quantile_input_dtype": "float32",
+    "quantile_method": "numpy.quantile, linear interpolation",
+    "predicate_score_precision": "original stored score values; float32 conversion applies only to quantile computation",
+    "thresholds": {
+      "crfiqa_q20": 1.9917948484420775,
+      "crfiqa_q40": 2.183194971084595,
+      "crfiqa_q60": 2.29313588142395,
+      "crfiqa_q80": 2.3808968544006346,
+      "musiq_q20": 24.581299209594725,
+      "musiq_q40": 34.16740112304687,
+      "musiq_q60": 40.83199234008789,
+      "musiq_q80": 45.77579574584961
+    },
+    "lq": {
+      "rule": "crfiqa < crfiqa_q20 AND musiq < musiq_q20",
+      "manifest": "meta_info/quality/lq.txt.gz",
+      "image_count": 92282
+    },
+    "hq": {
+      "rule": "crfiqa > crfiqa_q60 AND musiq > musiq_q60",
+      "manifest": "meta_info/quality/hq.txt.gz",
+      "image_count": 204216
+    },
+    "other_rule": "all accepted crops outside both LQ and HQ",
+    "threshold_comparisons": "strict; equal values do not satisfy < or >"
+  },
+  "iqa_test_split": {
+    "seed": 20260722,
+    "candidate_rule": "LQ images whose identity has no image in the HQ partition",
+    "candidate_count": 20916,
+    "sampling": "random.Random(seed).sample(sorted(unique_candidate_source_keys), 2000); sort selected keys",
+    "manifest": "meta_info/test/iqa.txt.gz",
+    "image_count": 2000,
+    "identity_count": 1366,
+    "exclusion_unit": "selected source images",
+    "remaining_manifest": "meta_info/train/without_test_images.txt.gz",
+    "remaining_image_count": 792629,
+    "remaining_manifest_scope": "excludes IQA test images only; still contains identification test identities"
+  },
+  "identification_test_split": {
+    "seed": 20260722,
+    "eligible_rule": "identities with at least one HQ image and at least one LQ image",
+    "eligible_identity_count": 15629,
+    "target_lq_images": 2000,
+    "selection_algorithm": {
+      "initial_order": "lexicographically sorted eligible identity labels",
+      "shuffle": "random.Random(seed).shuffle(identities)",
+      "subset_sum": "0/1 dynamic programming with each identity weighted by its full LQ image count",
+      "update_order": "descending totals from target to identity LQ count; fill previously unreachable totals only",
+      "termination": "stop at first identity after which the target total is reachable",
+      "output_order": "backtrack the first recorded predecessors, then sort selected identity labels"
+    },
+    "identity_manifest": "meta_info/test/identities.txt",
+    "identity_count": 476,
+    "query_manifest": "meta_info/test/queries.txt.gz",
+    "query_rule": "all LQ images of the selected identities",
+    "query_count": 2000,
+    "hq_pool_manifest": "meta_info/test/hq_pool.txt.gz",
+    "hq_pool_count": 3330,
+    "other_manifest": "meta_info/test/others.txt.gz",
+    "other_count": 9610,
+    "heldout_all_manifest": "meta_info/test/heldout_all.txt.gz",
+    "heldout_all_count": 14940,
+    "training_exclusion_unit": "all images of every selected identity, including HQ, LQ and other",
+    "remaining_manifest": "meta_info/train/identity_disjoint.txt.gz",
+    "remaining_image_count": 779689
+  },
+  "training_pools": {
+    "hq_selection_rule": "identity-disjoint crops with both quality scores strictly above their global (1 - top_percent / 100) quantiles",
+    "hq_top20": {"manifest": "meta_info/train/hq_top20.txt.gz", "image_count": 60185, "quantile": 0.8},
+    "hq_top40": {"manifest": "meta_info/train/hq_top40.txt.gz", "image_count": 200886, "quantile": 0.6},
+    "hq_top60": {"manifest": "meta_info/train/hq_top60.txt.gz", "image_count": 373077, "quantile": 0.4},
+    "hq_top80": {"manifest": "meta_info/train/hq_top80.txt.gz", "image_count": 558759, "quantile": 0.2},
+    "without_lq": {
+      "rule": "identity-disjoint all-image pool minus the full LQ partition",
+      "manifest": "meta_info/train/without_lq.txt.gz",
+      "image_count": 689407
+    },
+    "stage2_lq": {
+      "rule": "LQ images whose identity occurs in the identity-disjoint Top40 HQ reference pool",
+      "manifest": "meta_info/train/lq.txt.gz",
+      "image_count": 69366,
+      "identity_count": 15153,
+      "historical_loader_behavior": "the original identity-aware dataset applied this same identity intersection when reading the full LQ manifest",
+      "test_exclusion": "selected identification identities are absent from references; IQA test identities have no HQ reference"
+    }
+  },
+  "identification_evaluation": {
+    "task": "closed-set, fixed single-shot, 476-way identification",
+    "gallery": {
+      "seed": 20260726,
+      "manifest": "meta_info/test/gallery.txt.gz",
+      "image_count": 476,
+      "selection": "one random.Random(seed).choice(sorted_HQ_candidates) per identity, traversing identity labels in lexical order with one shared RNG",
+      "reuse": "use the published fixed gallery for every model and native-LQ baseline",
+      "image_domain": "native HQ crops"
+    },
+    "queries": {
+      "manifest": "meta_info/test/queries.txt.gz",
+      "image_count": 2000,
+      "image_domain": "native LQ crops or SR outputs from exactly those crops",
+      "sr_matching": "match original filenames; require all 2000 queries and reject duplicate matching filenames"
+    },
+    "source_exclusion": {
+      "key": "full relative source path under all_faces, preserving every directory component",
+      "query_gallery_source_overlap_allowed": false,
+      "query_gallery_basename_overlap_allowed": false,
+      "rule": "gallery candidates come only from HQ; queries come only from the disjoint LQ partition; source keys remain unchanged for SR outputs",
+      "same_identity_positive_allowed": true,
+      "content_deduplication": "no pixel or perceptual duplicate detection is implied by source-record exclusion"
+    },
+    "common_preprocessing": {
+      "reader": "Pillow Image.open",
+      "resize_interpolation": "Pillow bicubic",
+      "tensor_layout": "CHW",
+      "tensor_dtype": "float32",
+      "additional_face_detection_or_alignment": false,
+      "flip_or_test_time_augmentation": false,
+      "network_mode": "eval, inference without gradient computation",
+      "feature_normalization": "torch.nn.functional.normalize(features, p=2, dim=1, eps=1e-12)",
+      "default_batch_size": 64
+    },
+    "recognizers": {
+      "arcface": {
+        "architecture": "IR-SE50 Backbone(depth=50, drop_ratio=0.6, mode=ir_se)",
+        "embedding_dimension": 512,
+        "checkpoint_filename": "model_ir_se50.pth",
+        "checkpoint_sha256": "a035c768259b98ab1ce0e646312f48b9e1e218197a0f80ac6765e88f8b6ddf28",
+        "color_order": "RGB",
+        "resize_width_height": [112, 112],
+        "normalization": "float32 RGB / 255; then (x - 0.5) / 0.5"
+      },
+      "sphereface": {
+        "architecture": "sphere20a, feature=True, fc5 embedding",
+        "embedding_dimension": 512,
+        "checkpoint_filename": "sphere20a_20171020.pth",
+        "checkpoint_sha256": "ea0d488ce1faa1ee5007f41a30c73e3bdf4cbf5593a5ba043986ac9ba24642b7",
+        "preprocessing_protocol": "sphereface20a_bgr_v2_bicubic96x112_norm127p5_128",
+        "color_order": "read and resize RGB, then reverse channels to BGR",
+        "resize_width_height": [96, 112],
+        "normalization": "(BGR pixel value - 127.5) / 128, converted to float32"
+      }
+    },
+    "metrics": {
+      "similarity": "dot product of L2-normalized query and gallery embeddings, equal to cosine similarity",
+      "positive_cosine": "mean cosine to each query's same-identity gallery image over all 2000 queries",
+      "rank1": "mean(argmax over 476 gallery similarities equals the query identity) over all 2000 queries",
+      "aggregation": "micro average over query images",
+      "gallery_order_and_ties": "lexicographically sorted identity labels; torch.argmax selects the first maximum",
+      "sr_delta": "SR metric minus native-LQ metric using the same gallery, queries, checkpoints and preprocessing"
+    }
+  }
+}
